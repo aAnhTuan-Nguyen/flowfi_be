@@ -71,11 +71,32 @@ Render generates `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` automatically from
 Render will:
 
 1. Build the Docker image from `Dockerfile`.
-2. Run `pnpm migration:run:prod` before the service receives traffic.
-3. Start the API with `node dist/main.js`.
-4. Check health at `/api/v1/health`.
+2. Start the API with `node dist/main.js`.
+3. Check health at `/api/v1/health`.
 
 Do not set `DATABASE_SYNCHRONIZE=true` in Render.
+
+Free tier note: Render does not support `preDeployCommand` on free web services, so migrations are not run automatically by the Blueprint.
+
+Run migrations manually from your local machine before the first deploy and whenever schema changes:
+
+```bash
+DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require" DATABASE_SSL=true pnpm migration:run
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:DATABASE_URL="postgresql://user:password@host/dbname?sslmode=require"
+$env:DATABASE_SSL="true"
+pnpm migration:run
+```
+
+If you later upgrade the Render service to a paid plan, you can add this back to `render.yaml`:
+
+```yaml
+preDeployCommand: pnpm migration:run:prod
+```
 
 ## 6. Test Deployed API
 
