@@ -1,0 +1,41 @@
+services:
+  - type: web
+    name: flowfi-be
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/v1/health
+    preDeployCommand: pnpm migration:run:prod
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: API_PREFIX
+        value: api/v1
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_SSL
+        value: "true"
+      - key: DATABASE_SYNCHRONIZE
+        value: "false"
+      - key: TYPEORM_LOGGING
+        value: "false"
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_ACCESS_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 30d
+      - key: DEFAULT_CURRENCY_CODE
+        value: VND
+      - key: DEFAULT_TIMEZONE
+        value: Asia/Ho_Chi_Minh
+      - key: SYNC_MAX_BATCH_SIZE
+        value: "100"
+      - key: RATE_LIMIT_TTL_SECONDS
+        value: "60"
+      - key: RATE_LIMIT_MAX_REQUESTS
+        value: "100"
