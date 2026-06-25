@@ -11,6 +11,12 @@ export interface AppConfig {
   jwtAccessExpiresIn: string;
   jwtRefreshSecret: string;
   jwtRefreshExpiresIn: string;
+  smtpHost: string;
+  smtpPort: number;
+  smtpUser: string;
+  smtpPass: string;
+  smtpFrom: string;
+  passwordResetOtpTtlMinutes: number;
   defaultCurrencyCode: string;
   defaultTimezone: string;
   syncMaxBatchSize: number;
@@ -66,6 +72,15 @@ export function validateEnv(config: Record<string, unknown>): AppConfig {
       'dev-refresh-secret-change-me',
     ),
     jwtRefreshExpiresIn: asString(config.JWT_REFRESH_EXPIRES_IN, '30d'),
+    smtpHost: asString(config.SMTP_HOST, ''),
+    smtpPort: asNumber(config.SMTP_PORT as string | undefined, 587),
+    smtpUser: asString(config.SMTP_USER, ''),
+    smtpPass: asString(config.SMTP_PASS, ''),
+    smtpFrom: asString(config.SMTP_FROM, ''),
+    passwordResetOtpTtlMinutes: asNumber(
+      config.PASSWORD_RESET_OTP_TTL_MINUTES as string | undefined,
+      10,
+    ),
     defaultCurrencyCode: asString(config.DEFAULT_CURRENCY_CODE, 'VND'),
     defaultTimezone: asString(config.DEFAULT_TIMEZONE, 'Asia/Ho_Chi_Minh'),
     syncMaxBatchSize: asNumber(

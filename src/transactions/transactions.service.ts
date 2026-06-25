@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
@@ -11,6 +11,7 @@ import {
 import { ErrorCode } from '../common/errors/error-code.enum';
 import { addMoney, subtractMoney } from '../common/utils/money';
 import { paginated } from '../common/utils/pagination';
+import { BudgetProgressService } from '../budgets/budget-progress.service';
 import { Tag } from '../tags/entities/tag.entity';
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
@@ -18,7 +19,11 @@ import { TransactionQueryDto } from './dto/transaction-query.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { Transaction } from './entities/transaction.entity';
 import { transactionBalanceEffect } from './transaction-balance';
-import { TransactionInputMethod, TransactionStatus } from './transaction.enums';
+import {
+  TransactionInputMethod,
+  TransactionStatus,
+  TransactionType,
+} from './transaction.enums';
 
 @Injectable()
 export class TransactionsService {
@@ -30,13 +35,15 @@ export class TransactionsService {
     @InjectRepository(Tag)
     private readonly tagsRepository: Repository<Tag>,
     private readonly dataSource: DataSource,
+    @Optional()
+    private readonly budgetProgressService?: BudgetProgressService,
   ) {}
 
   async create(
     userId: string,
     dto: CreateTransactionDto,
   ): Promise<Transaction> {
-    return this.dataSource.transaction(async (manager) => {
+    const saved = await this.dataSource.transaction(async (manager) => {
       const wallet = await this.findWallet(userId, dto.walletId);
       await this.findTag(userId, dto.tagId);
       const transaction = manager.create(Transaction, {
@@ -64,6 +71,8 @@ export class TransactionsService {
       await manager.save(wallet);
       return saved;
     });
+    await this.checkBudgetAlert(userId, saved);
+    return saved;
   }
 
   async findAll(userId: string, query: TransactionQueryDto) {
@@ -110,6 +119,23 @@ export class TransactionsService {
         transactionType: query.transactionType,
       });
     }
+    if (query.status) {
+      queryBuilder.andWhere('transaction.status = :status', {
+        status: query.status,
+      });
+    }
+    if (query.inputMethod) {
+      queryBuilder.andWhere('transaction.input_method = :inputMethod', {
+        inputMethod: query.inputMethod,
+      });
+    }
+    const keyword = query.keyword?.trim();
+    if (keyword) {
+      queryBuilder.andWhere(
+        '(transaction.title ILIKE :keyword OR transaction.description ILIKE :keyword OR transaction.merchant_name ILIKE :keyword)',
+        { keyword: `%${keyword}%` },
+      );
+    }
     if (query.from)
       queryBuilder.andWhere('transaction.transaction_date >= :from', {
         from: query.from,
@@ -145,7 +171,7 @@ export class TransactionsService {
     id: string,
     dto: UpdateTransactionDto,
   ): Promise<Transaction> {
-    return this.dataSource.transaction(async (manager) => {
+    const updated = await this.dataSource.transaction(async (manager) => {
       const transaction = await this.findOne(userId, id);
       const oldWallet = await this.findWallet(userId, transaction.walletId);
       const oldEffect = transactionBalanceEffect(
@@ -193,6 +219,8 @@ export class TransactionsService {
       await manager.save(newWallet);
       return saved;
     });
+    await this.checkBudgetAlert(userId, updated);
+    return updated;
   }
 
   async confirm(userId: string, id: string): Promise<Transaction> {
@@ -252,5 +280,23 @@ export class TransactionsService {
       select: { id: true },
     });
     return wallets.map((wallet) => wallet.id);
+  }
+
+  private async checkBudgetAlert(
+    userId: string,
+    transaction: Transaction,
+  ): Promise<void> {
+    if (
+      transaction.status !== TransactionStatus.Confirmed ||
+      transaction.transactionType !== TransactionType.Expense
+    ) {
+      return;
+    }
+
+    await this.budgetProgressService?.checkAndCreateAlertsForTransaction({
+      userId,
+      tagId: transaction.tagId,
+      transactionDate: transaction.transactionDate,
+    });
   }
 }

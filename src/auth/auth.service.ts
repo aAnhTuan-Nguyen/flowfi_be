@@ -134,6 +134,49 @@ export class AuthService {
     return { revoked: true };
   }
 
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<AuthResponse> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: {
+        id: true,
+        email: true,
+        passwordHash: true,
+        fullName: true,
+        avatarUrl: true,
+        dateOfBirth: true,
+        currencyCode: true,
+        monthlyBudgetLimit: true,
+        authProvider: true,
+        createdAt: true,
+        updatedAt: true,
+        deletedAt: true,
+      },
+    });
+
+    if (
+      !user?.passwordHash ||
+      !(await bcrypt.compare(currentPassword, user.passwordHash))
+    ) {
+      throw new AppException(
+        ErrorCode.InvalidCredentials,
+        'Current password is invalid',
+        HttpStatus.UNAUTHORIZED,
+      );
+    }
+
+    user.passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.usersRepository.save(user);
+    await this.refreshTokensRepository.update(
+      { userId, isRevoked: false },
+      { isRevoked: true },
+    );
+    return this.issueTokens(user);
+  }
+
   private async issueTokens(user: User): Promise<AuthResponse> {
     const payload = { sub: user.id, email: user.email };
     const accessToken = await this.jwtService.signAsync(payload, {

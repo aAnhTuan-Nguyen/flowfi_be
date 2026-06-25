@@ -12,6 +12,7 @@ import { ErrorCode } from '../common/errors/error-code.enum';
 import { Goal } from '../goals/entities/goal.entity';
 import { Tag } from '../tags/entities/tag.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
+import { TransactionsService } from '../transactions/transactions.service';
 import { Wallet } from '../wallets/entities/wallet.entity';
 import { RegisterDeviceDto } from './dto/register-device.dto';
 import { ResolveConflictDto } from './dto/resolve-conflict.dto';
@@ -45,6 +46,7 @@ export class SyncService {
     private readonly transactionsRepository: Repository<Transaction>,
     private readonly dataSource: DataSource,
     private readonly configService: ConfigService<AppConfig>,
+    private readonly transactionsService?: TransactionsService,
   ) {}
 
   async registerDevice(
@@ -142,6 +144,10 @@ export class SyncService {
     deviceId: string | null,
     item: SyncPushItemDto,
   ) {
+    if (item.entityName === 'transactions') {
+      return this.applyTransactionPushItem(userId, deviceId, item);
+    }
+
     return this.dataSource.transaction(async (manager) => {
       const serverEntity = await this.findServerEntity(userId, item);
 
@@ -235,6 +241,102 @@ export class SyncService {
           message: 'Unsupported sync entity',
         });
     }
+  }
+
+  private async applyTransactionPushItem(
+    userId: string,
+    deviceId: string | null,
+    item: SyncPushItemDto,
+  ) {
+    const serverEntity = await this.findServerEntity(userId, item);
+
+    if (serverEntity && item.version && item.version < serverEntity.version) {
+      const conflict = await this.conflictsRepository.save(
+        this.conflictsRepository.create({
+          userId,
+          deviceId,
+          entityName: item.entityName,
+          entityId: item.entityId ?? serverEntity.id,
+          clientId: item.clientId ?? null,
+          localPayload: item.payload,
+          serverPayload: serverEntity as unknown as Record<string, unknown>,
+          status: ConflictStatus.Pending,
+        }),
+      );
+      return {
+        entityName: item.entityName,
+        clientId: item.clientId,
+        status: SyncStatus.Conflict,
+        conflictId: conflict.id,
+      };
+    }
+
+    if (!this.transactionsService) {
+      throw new BadRequestException({
+        code: ErrorCode.BadRequest,
+        message: 'Transaction sync is not configured',
+      });
+    }
+
+    const saved = await this.applyTransactionMutation(
+      userId,
+      item,
+      serverEntity,
+    );
+    await this.dataSource.transaction(async (manager) => {
+      await manager.save(
+        manager.create(SyncQueue, {
+          userId,
+          deviceId,
+          entityName: item.entityName,
+          entityId: saved?.id ?? item.entityId ?? null,
+          clientId: item.clientId ?? null,
+          action: item.action,
+          payload: item.payload,
+          syncStatus: SyncStatus.Synced,
+          syncedAt: new Date(),
+        }),
+      );
+    });
+
+    return {
+      entityName: item.entityName,
+      clientId: item.clientId,
+      entityId: saved?.id ?? item.entityId ?? null,
+      status: SyncStatus.Synced,
+      version: saved?.version,
+    };
+  }
+
+  private async applyTransactionMutation(
+    userId: string,
+    item: SyncPushItemDto,
+    serverEntity: SyncEntity | null,
+  ): Promise<Transaction | null> {
+    if (item.action === SyncAction.Delete) {
+      if (serverEntity)
+        await this.transactionsService!.remove(userId, serverEntity.id);
+      return serverEntity as Transaction | null;
+    }
+
+    if (item.action === SyncAction.Update) {
+      const entityId = item.entityId ?? serverEntity?.id;
+      if (!entityId) {
+        throw new BadRequestException({
+          code: ErrorCode.BadRequest,
+          message: 'Transaction update requires entityId',
+        });
+      }
+      return this.transactionsService!.update(userId, entityId, {
+        ...item.payload,
+        clientId: item.clientId,
+      });
+    }
+
+    return this.transactionsService!.create(userId, {
+      ...item.payload,
+      clientId: item.clientId,
+    } as never);
   }
 
   private async findServerEntity(

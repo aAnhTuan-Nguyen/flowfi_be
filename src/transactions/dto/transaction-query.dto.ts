@@ -1,6 +1,16 @@
-import { IsDateString, IsEnum, IsOptional, IsUUID } from 'class-validator';
+import {
+  IsDateString,
+  IsEnum,
+  IsOptional,
+  IsString,
+  IsUUID,
+} from 'class-validator';
 import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
-import { TransactionType } from '../transaction.enums';
+import {
+  TransactionInputMethod,
+  TransactionStatus,
+  TransactionType,
+} from '../transaction.enums';
 
 export class TransactionQueryDto extends PaginationQueryDto {
   @IsOptional()
@@ -14,6 +24,18 @@ export class TransactionQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsEnum(TransactionType)
   transactionType?: TransactionType;
+
+  @IsOptional()
+  @IsEnum(TransactionStatus)
+  status?: TransactionStatus;
+
+  @IsOptional()
+  @IsEnum(TransactionInputMethod)
+  inputMethod?: TransactionInputMethod;
+
+  @IsOptional()
+  @IsString()
+  keyword?: string;
 
   @IsOptional()
   @IsDateString()

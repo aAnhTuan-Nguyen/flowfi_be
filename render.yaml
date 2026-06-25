@@ -28,6 +28,18 @@ services:
         generateValue: true
       - key: JWT_REFRESH_EXPIRES_IN
         value: 30d
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      - key: PASSWORD_RESET_OTP_TTL_MINUTES
+        value: "10"
       - key: DEFAULT_CURRENCY_CODE
         value: VND
       - key: DEFAULT_TIMEZONE

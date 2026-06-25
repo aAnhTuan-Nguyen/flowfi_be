@@ -62,7 +62,13 @@ Then:
 3. Render will detect `render.yaml`.
 4. Review the service `flowfi-be`.
 5. Fill `DATABASE_URL` with your Neon URL.
-6. Apply the Blueprint.
+6. Fill SMTP values if you want to test forgot password:
+   - `SMTP_HOST`
+   - `SMTP_PORT`
+   - `SMTP_USER`
+   - `SMTP_PASS`
+   - `SMTP_FROM`
+7. Apply the Blueprint.
 
 Render generates `JWT_ACCESS_SECRET` and `JWT_REFRESH_SECRET` automatically from `render.yaml`.
 
@@ -123,9 +129,14 @@ Then test:
 
 ```http
 GET /api/v1/users/me
+POST /api/v1/auth/forgot-password
+POST /api/v1/auth/reset-password
+POST /api/v1/auth/change-password
 POST /api/v1/wallets
 POST /api/v1/tags
 POST /api/v1/transactions
+GET /api/v1/transactions?keyword=coffee&status=Confirmed&inputMethod=Manual
+GET /api/v1/budgets/progress?month=6&year=2026
 GET /api/v1/reports/summary
 ```
 

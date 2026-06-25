@@ -30,6 +30,9 @@ export class Notification {
   @Column({ name: 'notification_type', type: 'varchar', length: 50 })
   notificationType!: NotificationType;
 
+  @Column({ type: 'jsonb', nullable: true })
+  metadata!: Record<string, unknown> | null;
+
   @Column({ name: 'is_read', type: 'boolean', default: false })
   isRead!: boolean;
 
