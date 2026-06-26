@@ -61,7 +61,12 @@ export class AiProcessingService {
     'image/png',
     'image/webp',
   ]);
-  private readonly imageExtensions = new Set(['.jpg', '.jpeg', '.png', '.webp']);
+  private readonly imageExtensions = new Set([
+    '.jpg',
+    '.jpeg',
+    '.png',
+    '.webp',
+  ]);
   private readonly audioContentTypes = new Set([
     'audio/mpeg',
     'audio/mp3',
@@ -146,16 +151,15 @@ export class AiProcessingService {
         amount: dto.amount ?? null,
         transactionType: dto.transactionType ?? null,
         tag: dto.tag ?? null,
-        transactionDate: dto.transactionDate ? new Date(dto.transactionDate) : null,
+        transactionDate: dto.transactionDate
+          ? new Date(dto.transactionDate)
+          : null,
         rawResponse: dto.rawResponse ?? null,
       }),
     );
   }
 
-  async extractTextFromImage(
-    userId: string,
-    file: UploadedAiFile | undefined,
-  ) {
+  async extractTextFromImage(userId: string, file: UploadedAiFile | undefined) {
     this.validateFile(file, {
       label: 'Image',
       maxBytes: 5 * 1024 * 1024,
@@ -249,7 +253,8 @@ export class AiProcessingService {
       requestType: AiRequestType.VoiceToTransaction,
       inputUrl: voiceUrl,
     });
-    const rawText = mockTranscribedText ?? this.mockTranscript(file!.originalname);
+    const rawText =
+      mockTranscribedText ?? this.mockTranscript(file!.originalname);
     const analysis = this.analyzeVoiceText(rawText);
     const result = await this.saveAnalysisResult(request.id, analysis);
     await this.completeRequest(request);
@@ -336,7 +341,10 @@ export class AiProcessingService {
 
     const created: CreatedAiTransaction[] = [];
     for (const item of transactions) {
-      if (item.amount <= 0 || item.transactionType === AiTransactionType.Unknown) {
+      if (
+        item.amount <= 0 ||
+        item.transactionType === AiTransactionType.Unknown
+      ) {
         continue;
       }
       const { tag, tagCreated } = await this.findOrCreateTag(
@@ -376,7 +384,9 @@ export class AiProcessingService {
     transactionType: AiTransactionType,
   ) {
     const type =
-      transactionType === AiTransactionType.Income ? TagType.Income : TagType.Expense;
+      transactionType === AiTransactionType.Income
+        ? TagType.Income
+        : TagType.Expense;
     const existing = await this.tagsRepository.findOne({
       where: [
         { userId, name: tagName, type },
@@ -421,11 +431,15 @@ export class AiProcessingService {
       throw new BadRequestException(`${options.label} file is too large`);
     }
     if (!options.contentTypes.has(file.mimetype)) {
-      throw new BadRequestException(`${options.label} content type is not allowed`);
+      throw new BadRequestException(
+        `${options.label} content type is not allowed`,
+      );
     }
     const extension = this.fileExtension(file.originalname);
     if (!options.extensions.has(extension)) {
-      throw new BadRequestException(`${options.label} extension is not allowed`);
+      throw new BadRequestException(
+        `${options.label} extension is not allowed`,
+      );
     }
   }
 
@@ -439,7 +453,10 @@ export class AiProcessingService {
     }
   }
 
-  private buildStoredFileUrl(folder: 'images' | 'voices', file: UploadedAiFile) {
+  private buildStoredFileUrl(
+    folder: 'images' | 'voices',
+    file: UploadedAiFile,
+  ) {
     const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
     const key = `ai-processing/${folder}/${Date.now()}-${safeName}`;
     const baseUrl = process.env.SUPABASE_STORAGE_PUBLIC_URL;
@@ -487,8 +504,7 @@ export class AiProcessingService {
       this.envValue(
         'AI_PROVIDER_TIMEOUT_SECONDS',
         'FLOWFI_AI__AiProvider__TimeoutSeconds',
-      ) ??
-        30,
+      ) ?? 30,
     );
     const controller = new AbortController();
     const timeout = setTimeout(
@@ -497,50 +513,51 @@ export class AiProcessingService {
     );
 
     try {
-      const response = await fetch(`${baseUrl.replace(/\/$/, '')}${responsesPath}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          input: [
-            {
-              role: 'user',
-              content: [
-                {
-                  type: 'input_text',
-                  text: this.imageTransactionPrompt(),
-                },
-                {
-                  type: 'input_image',
-                  image_url: `data:${file.mimetype};base64,${file.buffer.toString(
-                    'base64',
-                  )}`,
-                },
-              ],
+      const response = await fetch(
+        `${baseUrl.replace(/\/$/, '')}${responsesPath}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            input: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: this.imageTransactionPrompt(),
+                  },
+                  {
+                    type: 'input_image',
+                    image_url: `data:${file.mimetype};base64,${file.buffer.toString(
+                      'base64',
+                    )}`,
+                  },
+                ],
+              },
+            ],
+            reasoning: {
+              effort:
+                this.envValue(
+                  'AI_PROVIDER_REASONING_EFFORT',
+                  'FLOWFI_AI__AiProvider__ReasoningEffort',
+                ) ?? 'low',
             },
-          ],
-          reasoning: {
-            effort:
-              this.envValue(
-                'AI_PROVIDER_REASONING_EFFORT',
-                'FLOWFI_AI__AiProvider__ReasoningEffort',
-              ) ??
-              'low',
-          },
-          text: {
-            verbosity:
-              this.envValue(
-                'AI_PROVIDER_VERBOSITY',
-                'FLOWFI_AI__AiProvider__Verbosity',
-              ) ??
-              'low',
-          },
-        }),
-        signal: controller.signal,
-      });
+            text: {
+              verbosity:
+                this.envValue(
+                  'AI_PROVIDER_VERBOSITY',
+                  'FLOWFI_AI__AiProvider__Verbosity',
+                ) ?? 'low',
+            },
+          }),
+          signal: controller.signal,
+        },
+      );
 
       const payload = (await response.json().catch(() => null)) as unknown;
       if (!response.ok) {
@@ -570,17 +587,26 @@ export class AiProcessingService {
     };
   }
 
-  private parseTransactions(rawText: string, aggregate: boolean): ParsedTransaction[] {
+  private parseTransactions(
+    rawText: string,
+    aggregate: boolean,
+  ): ParsedTransaction[] {
     const amounts = this.extractAmounts(rawText);
     if (amounts.length === 0) return [];
 
     const tag = this.guessTag(rawText);
     const transactionType = this.guessTransactionType(rawText);
     const merchantName = this.guessMerchant(rawText);
-    const amount = aggregate ? amounts.reduce((sum, item) => sum + item, 0) : Math.max(...amounts);
+    const amount = aggregate
+      ? amounts.reduce((sum, item) => sum + item, 0)
+      : Math.max(...amounts);
     return [
       {
-        title: aggregate ? 'Voice expense' : merchantName ? `Purchase at ${merchantName}` : 'AI parsed transaction',
+        title: aggregate
+          ? 'Voice expense'
+          : merchantName
+            ? `Purchase at ${merchantName}`
+            : 'AI parsed transaction',
         amount,
         transactionType,
         tagName: this.tagName(tag),
@@ -860,7 +886,9 @@ Return this JSON shape:
   }
 
   private guessMerchant(text: string): string | null {
-    const match = /(bach hoa xanh|coopmart|highlands|circle k|winmart)/i.exec(text);
+    const match = /(bach hoa xanh|coopmart|highlands|circle k|winmart)/i.exec(
+      text,
+    );
     return match ? match[1] : null;
   }
 
