@@ -19,6 +19,7 @@ import { GoalsModule } from './goals/goals.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ReportsModule } from './reports/reports.module';
 import { SyncModule } from './sync/sync.module';
+import { AiProcessingModule } from './ai-processing/ai-processing.module';
 
 @Module({
   imports: [
@@ -43,6 +44,7 @@ import { SyncModule } from './sync/sync.module';
     NotificationsModule,
     ReportsModule,
     SyncModule,
+    AiProcessingModule,
   ],
   controllers: [AppController],
   providers: [

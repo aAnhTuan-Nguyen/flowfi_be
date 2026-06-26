@@ -4,9 +4,12 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { apiReference } from '@scalar/nestjs-api-reference';
 import { Request, Response } from 'express';
 import helmet from 'helmet';
+import { config as loadEnv } from 'dotenv';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { ApiResponseInterceptor } from './common/interceptors/api-response.interceptor';
+
+loadEnv({ override: true });
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
