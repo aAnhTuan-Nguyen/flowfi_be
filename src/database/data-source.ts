@@ -15,8 +15,11 @@ import { Notification } from '../notifications/entities/notification.entity';
 import { UserDevice } from '../sync/entities/user-device.entity';
 import { SyncQueue } from '../sync/entities/sync-queue.entity';
 import { SyncConflict } from '../sync/entities/sync-conflict.entity';
+import { AiProcessingRequest } from '../ai-processing/entities/ai-processing-request.entity';
+import { AiProcessingResult } from '../ai-processing/entities/ai-processing-result.entity';
 import { InitialFlowFiMvp1780000000000 } from './migrations/1780000000000-InitialFlowFiMvp';
 import { AuthBudgetAlerts1780000001000 } from './migrations/1780000001000-AuthBudgetAlerts';
+import { AddAiProcessing1780000002000 } from './migrations/1780000002000-AddAiProcessing';
 
 const env = validateEnv(process.env);
 
@@ -40,6 +43,12 @@ export default new DataSource({
     UserDevice,
     SyncQueue,
     SyncConflict,
+    AiProcessingRequest,
+    AiProcessingResult,
   ],
-  migrations: [InitialFlowFiMvp1780000000000, AuthBudgetAlerts1780000001000],
+  migrations: [
+    InitialFlowFiMvp1780000000000,
+    AuthBudgetAlerts1780000001000,
+    AddAiProcessing1780000002000,
+  ],
 });
