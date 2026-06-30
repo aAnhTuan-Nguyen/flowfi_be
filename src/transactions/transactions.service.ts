@@ -193,8 +193,6 @@ export class TransactionsService {
         transactionDate: dto.transactionDate
           ? new Date(dto.transactionDate)
           : transaction.transactionDate,
-        inputMethod: dto.inputMethod ?? transaction.inputMethod,
-        status: dto.status ?? transaction.status,
         merchantName: dto.merchantName ?? transaction.merchantName,
         clientId: dto.clientId ?? transaction.clientId,
         version: transaction.version + 1,
@@ -224,7 +222,42 @@ export class TransactionsService {
   }
 
   async confirm(userId: string, id: string): Promise<Transaction> {
-    return this.update(userId, id, { status: TransactionStatus.Confirmed });
+    const current = await this.findOne(userId, id);
+    if (current.status === TransactionStatus.Confirmed) {
+      return current;
+    }
+
+    const confirmed = await this.dataSource.transaction(async (manager) => {
+      const transaction = await this.findOne(userId, id);
+      if (transaction.status === TransactionStatus.Confirmed) {
+        return transaction;
+      }
+
+      const wallet = await this.findWallet(userId, transaction.walletId);
+      const oldEffect = transactionBalanceEffect(
+        transaction.amount,
+        transaction.transactionType,
+        transaction.status,
+      );
+
+      transaction.status = TransactionStatus.Confirmed;
+      transaction.version += 1;
+      const saved = await manager.save(transaction);
+
+      wallet.balance = subtractMoney(wallet.balance, oldEffect);
+      wallet.balance = addMoney(
+        wallet.balance,
+        transactionBalanceEffect(
+          saved.amount,
+          saved.transactionType,
+          saved.status,
+        ),
+      );
+      await manager.save(wallet);
+      return saved;
+    });
+    await this.checkBudgetAlert(userId, confirmed);
+    return confirmed;
   }
 
   async remove(userId: string, id: string): Promise<{ deleted: boolean }> {

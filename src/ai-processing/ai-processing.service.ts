@@ -11,6 +11,7 @@ import { Tag } from '../tags/entities/tag.entity';
 import { TagType } from '../tags/tag.enums';
 import {
   TransactionInputMethod,
+  TransactionStatus,
   TransactionType,
 } from '../transactions/transaction.enums';
 import { TransactionsService } from '../transactions/transactions.service';
@@ -206,6 +207,7 @@ export class AiProcessingService {
       walletId,
       extracted.analysis.transactions,
       TransactionInputMethod.OCR,
+      TransactionStatus.Draft,
     );
 
     return {
@@ -331,6 +333,7 @@ export class AiProcessingService {
     walletId: string,
     transactions: ParsedTransaction[],
     inputMethod: TransactionInputMethod,
+    status?: TransactionStatus,
   ) {
     if (transactions.length === 0) {
       throw new UnprocessableEntityException({
@@ -364,6 +367,7 @@ export class AiProcessingService {
             : TransactionType.Expense,
         transactionDate: item.transactionDate ?? new Date().toISOString(),
         inputMethod,
+        ...(status ? { status } : {}),
         merchantName: item.merchantName ?? undefined,
       });
       created.push({ tag, tagCreated, transaction });
