@@ -1,4 +1,4 @@
-import { Type } from 'class-transformer';
+﻿import { Type } from 'class-transformer';
 import {
   IsArray,
   IsEnum,
@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   ValidateNested,
 } from 'class-validator';
 import { SyncAction } from '../sync.enums';
@@ -36,8 +37,9 @@ export class SyncPushItemDto {
 
 export class SyncPushDto {
   @IsOptional()
-  @IsUUID()
-  deviceUuid?: string;
+  @IsString()
+  @Length(1, 255)
+  deviceId?: string;
 
   @IsArray()
   @ValidateNested({ each: true })

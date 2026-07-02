@@ -1,4 +1,4 @@
-import {
+﻿import {
   BadRequestException,
   Injectable,
   NotFoundException,
@@ -88,7 +88,15 @@ export class SyncService {
 
     return {
       serverTime: new Date().toISOString(),
-      changes: { wallets, tags, transactions, budgets, goals },
+      changes: {
+        wallets: wallets.map((entity) => this.serializeSyncEntity(entity)),
+        tags: tags.map((entity) => this.serializeSyncEntity(entity)),
+        transactions: transactions.map((entity) =>
+          this.serializeSyncEntity(entity),
+        ),
+        budgets: budgets.map((entity) => this.serializeSyncEntity(entity)),
+        goals: goals.map((entity) => this.serializeSyncEntity(entity)),
+      },
     };
   }
 
@@ -105,7 +113,7 @@ export class SyncService {
     const results: Array<Record<string, unknown>> = [];
     for (const item of dto.items) {
       results.push(
-        await this.applyPushItem(userId, dto.deviceUuid ?? null, item),
+        await this.applyPushItem(userId, dto.deviceId ?? null, item),
       );
     }
 
@@ -313,6 +321,10 @@ export class SyncService {
     item: SyncPushItemDto,
     serverEntity: SyncEntity | null,
   ): Promise<Transaction | null> {
+    if (item.action === SyncAction.Create && serverEntity) {
+      return serverEntity as Transaction;
+    }
+
     if (item.action === SyncAction.Delete) {
       if (serverEntity)
         await this.transactionsService!.remove(userId, serverEntity.id);
@@ -327,16 +339,24 @@ export class SyncService {
           message: 'Transaction update requires entityId',
         });
       }
-      return this.transactionsService!.update(userId, entityId, {
-        ...item.payload,
-        clientId: item.clientId,
-      });
+      return this.transactionsService!.update(userId, entityId, item.payload);
     }
 
     return this.transactionsService!.create(userId, {
       ...item.payload,
       clientId: item.clientId,
     } as never);
+  }
+
+  private serializeSyncEntity(entity: SyncEntity): Record<string, unknown> {
+    return {
+      ...entity,
+      id: entity.id,
+      clientId: entity.clientId ?? null,
+      version: entity.version,
+      updatedAt: entity.updatedAt?.toISOString() ?? null,
+      deletedAt: entity.deletedAt?.toISOString() ?? null,
+    };
   }
 
   private async findServerEntity(

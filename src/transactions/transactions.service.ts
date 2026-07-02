@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import {
   Between,
@@ -180,11 +180,9 @@ export class TransactionsService {
         transaction.status,
       );
 
-      if (dto.walletId) await this.findWallet(userId, dto.walletId);
       if (dto.tagId) await this.findTag(userId, dto.tagId);
 
       Object.assign(transaction, {
-        walletId: dto.walletId ?? transaction.walletId,
         tagId: dto.tagId ?? transaction.tagId,
         title: dto.title ?? transaction.title,
         description: dto.description ?? transaction.description,
@@ -194,27 +192,20 @@ export class TransactionsService {
           ? new Date(dto.transactionDate)
           : transaction.transactionDate,
         merchantName: dto.merchantName ?? transaction.merchantName,
-        clientId: dto.clientId ?? transaction.clientId,
         version: transaction.version + 1,
       });
 
       const saved = await manager.save(transaction);
       oldWallet.balance = subtractMoney(oldWallet.balance, oldEffect);
-      await manager.save(oldWallet);
-
-      const newWallet =
-        saved.walletId === oldWallet.id
-          ? oldWallet
-          : await this.findWallet(userId, saved.walletId);
-      newWallet.balance = addMoney(
-        newWallet.balance,
+      oldWallet.balance = addMoney(
+        oldWallet.balance,
         transactionBalanceEffect(
           saved.amount,
           saved.transactionType,
           saved.status,
         ),
       );
-      await manager.save(newWallet);
+      await manager.save(oldWallet);
       return saved;
     });
     await this.checkBudgetAlert(userId, updated);
