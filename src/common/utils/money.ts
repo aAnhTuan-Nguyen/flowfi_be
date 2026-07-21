@@ -10,7 +10,7 @@ function parseMoney(value: string | number): bigint {
   return sign * (major + minor);
 }
 
-function formatMoney(cents: bigint): string {
+function formatMoneyCents(cents: bigint): string {
   const sign = cents < 0n ? '-' : '';
   const absolute = cents < 0n ? -cents : cents;
   const major = absolute / SCALE;
@@ -22,18 +22,31 @@ export function addMoney(
   left: string | number,
   right: string | number,
 ): string {
-  return formatMoney(parseMoney(left) + parseMoney(right));
+  return formatMoneyCents(parseMoney(left) + parseMoney(right));
 }
 
 export function subtractMoney(
   left: string | number,
   right: string | number,
 ): string {
-  return formatMoney(parseMoney(left) - parseMoney(right));
+  return formatMoneyCents(parseMoney(left) - parseMoney(right));
 }
 
 export function negateMoney(value: string | number): string {
-  return formatMoney(-parseMoney(value));
+  return formatMoneyCents(-parseMoney(value));
+}
+
+export function formatMoney(value: string | number): string {
+  return formatMoneyCents(parseMoney(value));
+}
+
+export function formatMoneyWithCurrency(
+  value: string | number,
+  currencyCode: string | null | undefined,
+): string {
+  const formatted = formatMoney(value);
+  if (!currencyCode) return formatted;
+  return `${formatted} ${currencyCode.toUpperCase()}`;
 }
 
 export function compareMoney(

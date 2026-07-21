@@ -9,14 +9,13 @@ describe('BudgetProgressService', () => {
   const transactionsRepository = {
     createQueryBuilder: jest.fn(),
   };
-  const notificationsRepository = {
-    save: jest.fn(),
-    create: jest.fn((value) => value),
-  };
   const alertLogsRepository = {
     findOne: jest.fn(),
     save: jest.fn(),
     create: jest.fn((value) => value),
+  };
+  const notificationDispatcher = {
+    dispatch: jest.fn().mockResolvedValue({ id: 'notif_1' }),
   };
 
   beforeEach(() => {
@@ -43,7 +42,7 @@ describe('BudgetProgressService', () => {
     const service = new BudgetProgressService(
       budgetsRepository as never,
       transactionsRepository as never,
-      notificationsRepository as never,
+      notificationDispatcher as never,
       alertLogsRepository as never,
     );
 
@@ -84,7 +83,7 @@ describe('BudgetProgressService', () => {
     const service = new BudgetProgressService(
       budgetsRepository as never,
       transactionsRepository as never,
-      notificationsRepository as never,
+      notificationDispatcher as never,
       alertLogsRepository as never,
     );
 
@@ -99,7 +98,7 @@ describe('BudgetProgressService', () => {
       transactionDate: new Date('2026-06-16T00:00:00.000Z'),
     });
 
-    expect(notificationsRepository.save).toHaveBeenCalledTimes(1);
+    expect(notificationDispatcher.dispatch).toHaveBeenCalledTimes(1);
     expect(alertLogsRepository.save).toHaveBeenCalledTimes(1);
   });
 });

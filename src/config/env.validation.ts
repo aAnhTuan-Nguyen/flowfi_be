@@ -20,6 +20,10 @@ export interface AppConfig {
   defaultCurrencyCode: string;
   defaultTimezone: string;
   syncMaxBatchSize: number;
+  notificationDailyReminderCron: string;
+  notificationWeeklySummaryCron: string;
+  notificationMonthlySummaryCron: string;
+  notificationSavingsTipCron: string;
 }
 
 function asBoolean(value: string | undefined, fallback: boolean): boolean {
@@ -86,6 +90,22 @@ export function validateEnv(config: Record<string, unknown>): AppConfig {
     syncMaxBatchSize: asNumber(
       config.SYNC_MAX_BATCH_SIZE as string | undefined,
       100,
+    ),
+    notificationDailyReminderCron: asString(
+      config.NOTIFICATION_DAILY_REMINDER_CRON,
+      '0 13 * * *',
+    ),
+    notificationWeeklySummaryCron: asString(
+      config.NOTIFICATION_WEEKLY_SUMMARY_CRON,
+      '0 1 * * 1',
+    ),
+    notificationMonthlySummaryCron: asString(
+      config.NOTIFICATION_MONTHLY_SUMMARY_CRON,
+      '0 2 1 * *',
+    ),
+    notificationSavingsTipCron: asString(
+      config.NOTIFICATION_SAVINGS_TIP_CRON,
+      '0 3 * * 1',
     ),
   };
 }

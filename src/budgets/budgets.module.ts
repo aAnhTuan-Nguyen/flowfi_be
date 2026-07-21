@@ -1,6 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { Notification } from '../notifications/entities/notification.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { Tag } from '../tags/entities/tag.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import { BudgetProgressService } from './budget-progress.service';
@@ -11,11 +11,11 @@ import { BudgetsService } from './budgets.service';
 
 @Module({
   imports: [
+    NotificationsModule,
     TypeOrmModule.forFeature([
       Budget,
       Tag,
       Transaction,
-      Notification,
       BudgetAlertLog,
     ]),
   ],

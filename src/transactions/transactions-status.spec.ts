@@ -46,7 +46,10 @@ describe('TransactionsService status transitions', () => {
           .fn()
           .mockReturnValue(tagQueryBuilderReturning({ id: 'tag_food' })),
       } as never,
+      { findOne: jest.fn() } as never,
       dataSource as never,
+      undefined,
+      undefined,
     );
 
     const draft = await service.create('user_1', {
@@ -111,14 +114,19 @@ describe('TransactionsService status transitions', () => {
         findOne: jest.fn().mockResolvedValue(wallet),
         find: jest.fn(),
       } as never,
-      {} as never,
+      {
+        createQueryBuilder: jest
+          .fn()
+          .mockReturnValue(tagQueryBuilderReturning({ id: 'tag_food' })),
+      } as never,
+      { findOne: jest.fn() } as never,
       dataSource as never,
+      undefined,
+      undefined,
     );
 
     const updated = await service.update('user_1', 'tx_1', {
       title: 'Edited coffee',
-      status: TransactionStatus.Confirmed,
-      inputMethod: TransactionInputMethod.Manual,
     });
 
     expect(updated).toEqual(
@@ -165,9 +173,15 @@ describe('TransactionsService status transitions', () => {
         findOne: jest.fn().mockResolvedValue(wallet),
         find: jest.fn(),
       } as never,
-      {} as never,
+      {
+        createQueryBuilder: jest
+          .fn()
+          .mockReturnValue(tagQueryBuilderReturning({ id: 'tag_food' })),
+      } as never,
+      { findOne: jest.fn() } as never,
       dataSource as never,
       budgetProgressService as never,
+      undefined,
     );
 
     const confirmed = await service.confirm('user_1', 'tx_1');
@@ -218,8 +232,10 @@ describe('TransactionsService status transitions', () => {
         find: jest.fn(),
       } as never,
       {} as never,
+      { findOne: jest.fn() } as never,
       dataSource as never,
       budgetProgressService as never,
+      undefined,
     );
 
     await expect(service.confirm('user_1', 'tx_1')).resolves.toBe(transaction);

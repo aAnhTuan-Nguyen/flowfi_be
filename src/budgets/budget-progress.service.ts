@@ -3,13 +3,15 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { IsNull, Repository } from 'typeorm';
 import { subtractMoney } from '../common/utils/money';
 import { ErrorCode } from '../common/errors/error-code.enum';
-import { Notification } from '../notifications/entities/notification.entity';
-import { NotificationType } from '../notifications/notification.enums';
+import { Tag } from '../tags/entities/tag.entity';
 import { Transaction } from '../transactions/entities/transaction.entity';
 import {
   TransactionStatus,
   TransactionType,
 } from '../transactions/transaction.enums';
+import { NotificationDispatcher } from '../notifications/notification.dispatcher';
+import { NotificationTemplates } from '../notifications/notification.templates';
+import { NotificationType } from '../notifications/notification.enums';
 import { BudgetAlertLog } from './entities/budget-alert-log.entity';
 import { Budget } from './entities/budget.entity';
 
@@ -41,8 +43,7 @@ export class BudgetProgressService {
     private readonly budgetsRepository: Repository<Budget>,
     @InjectRepository(Transaction)
     private readonly transactionsRepository: Repository<Transaction>,
-    @InjectRepository(Notification)
-    private readonly notificationsRepository: Repository<Notification>,
+    private readonly notificationDispatcher: NotificationDispatcher,
     @InjectRepository(BudgetAlertLog)
     private readonly alertLogsRepository: Repository<BudgetAlertLog>,
   ) {}
@@ -112,22 +113,26 @@ export class BudgetProgressService {
       });
       if (existing) continue;
 
-      await this.notificationsRepository.save(
-        this.notificationsRepository.create({
-          userId: target.userId,
-          title: thresholdPercent >= 100 ? 'Budget exceeded' : 'Budget warning',
-          content: `${budget.tag?.name ?? 'Monthly budget'} reached ${progress.percentUsed}% of its limit.`,
-          notificationType: NotificationType.BudgetWarning,
-          metadata: {
-            budgetId: budget.id,
-            tagId: budget.tagId,
-            month,
-            year,
-            thresholdPercent,
-            percentUsed: progress.percentUsed,
-          },
-        }),
-      );
+      const template = NotificationTemplates.budgetWarning({
+        tagName: budget.tag?.name ?? null,
+        percentUsed: progress.percentUsed,
+        remainingAmount: progress.remainingAmount,
+      });
+      await this.notificationDispatcher.dispatch({
+        userId: target.userId,
+        type: NotificationType.BudgetWarning,
+        title: template.title,
+        content: template.content,
+        metadata: {
+          budgetId: budget.id,
+          tagId: budget.tagId,
+          tagName: budget.tag?.name ?? null,
+          month,
+          year,
+          thresholdPercent,
+          percentUsed: progress.percentUsed,
+        },
+      });
       await this.alertLogsRepository.save(
         this.alertLogsRepository.create({
           userId: target.userId,

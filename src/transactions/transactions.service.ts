@@ -12,8 +12,14 @@ import { ErrorCode } from '../common/errors/error-code.enum';
 import { addMoney, subtractMoney } from '../common/utils/money';
 import { paginated } from '../common/utils/pagination';
 import { BudgetProgressService } from '../budgets/budget-progress.service';
+import {
+  NotificationDispatcher,
+} from '../notifications/notification.dispatcher';
+import { NotificationTemplates } from '../notifications/notification.templates';
+import { NotificationType } from '../notifications/notification.enums';
 import { Tag } from '../tags/entities/tag.entity';
 import { Wallet } from '../wallets/entities/wallet.entity';
+import { User } from '../users/entities/user.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { TransactionQueryDto } from './dto/transaction-query.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
@@ -34,44 +40,52 @@ export class TransactionsService {
     private readonly walletsRepository: Repository<Wallet>,
     @InjectRepository(Tag)
     private readonly tagsRepository: Repository<Tag>,
+    @InjectRepository(User)
+    private readonly usersRepository: Repository<User>,
     private readonly dataSource: DataSource,
     @Optional()
     private readonly budgetProgressService?: BudgetProgressService,
+    @Optional()
+    private readonly notificationDispatcher?: NotificationDispatcher,
   ) {}
 
   async create(
     userId: string,
     dto: CreateTransactionDto,
   ): Promise<Transaction> {
-    const saved = await this.dataSource.transaction(async (manager) => {
-      const wallet = await this.findWallet(userId, dto.walletId);
-      await this.findTag(userId, dto.tagId);
-      const transaction = manager.create(Transaction, {
-        walletId: dto.walletId,
-        tagId: dto.tagId,
-        title: dto.title,
-        description: dto.description ?? null,
-        amount: dto.amount,
-        transactionType: dto.transactionType,
-        transactionDate: new Date(dto.transactionDate),
-        inputMethod: dto.inputMethod ?? TransactionInputMethod.Manual,
-        status: dto.status ?? TransactionStatus.Confirmed,
-        merchantName: dto.merchantName ?? null,
-        clientId: dto.clientId ?? null,
-      });
-      const saved = await manager.save(transaction);
-      wallet.balance = addMoney(
-        wallet.balance,
-        transactionBalanceEffect(
-          saved.amount,
-          saved.transactionType,
-          saved.status,
-        ),
-      );
-      await manager.save(wallet);
-      return saved;
-    });
+    const { saved, wallet, tag } = await this.dataSource.transaction(
+      async (manager) => {
+        const wallet = await this.findWallet(userId, dto.walletId);
+        const tag = await this.findTag(userId, dto.tagId);
+        const transaction = manager.create(Transaction, {
+          walletId: dto.walletId,
+          tagId: dto.tagId,
+          title: dto.title,
+          description: dto.description ?? null,
+          amount: dto.amount,
+          transactionType: dto.transactionType,
+          transactionDate: new Date(dto.transactionDate),
+          inputMethod: dto.inputMethod ?? TransactionInputMethod.Manual,
+          status: dto.status ?? TransactionStatus.Confirmed,
+          merchantName: dto.merchantName ?? null,
+          clientId: dto.clientId ?? null,
+        });
+        const saved = await manager.save(transaction);
+        wallet.balance = addMoney(
+          wallet.balance,
+          transactionBalanceEffect(
+            saved.amount,
+            saved.transactionType,
+            saved.status,
+          ),
+        );
+        await manager.save(wallet);
+        return { saved, wallet, tag };
+      },
+    );
+
     await this.checkBudgetAlert(userId, saved);
+    await this.notifyTransactionChange(userId, saved, wallet, tag);
     return saved;
   }
 
@@ -171,45 +185,54 @@ export class TransactionsService {
     id: string,
     dto: UpdateTransactionDto,
   ): Promise<Transaction> {
-    const updated = await this.dataSource.transaction(async (manager) => {
-      const transaction = await this.findOne(userId, id);
-      const oldWallet = await this.findWallet(userId, transaction.walletId);
-      const oldEffect = transactionBalanceEffect(
-        transaction.amount,
-        transaction.transactionType,
-        transaction.status,
-      );
+    const { saved, wallet, tag } = await this.dataSource.transaction(
+      async (manager) => {
+        const transaction = await this.findOne(userId, id);
+        const wallet = await this.findWallet(userId, transaction.walletId);
+        const tag = transaction.tagId
+          ? await this.findTag(userId, transaction.tagId)
+          : null;
+        const oldEffect = transactionBalanceEffect(
+          transaction.amount,
+          transaction.transactionType,
+          transaction.status,
+        );
 
-      if (dto.tagId) await this.findTag(userId, dto.tagId);
+        if (dto.tagId) await this.findTag(userId, dto.tagId);
 
-      Object.assign(transaction, {
-        tagId: dto.tagId ?? transaction.tagId,
-        title: dto.title ?? transaction.title,
-        description: dto.description ?? transaction.description,
-        amount: dto.amount ?? transaction.amount,
-        transactionType: dto.transactionType ?? transaction.transactionType,
-        transactionDate: dto.transactionDate
-          ? new Date(dto.transactionDate)
-          : transaction.transactionDate,
-        merchantName: dto.merchantName ?? transaction.merchantName,
-        version: transaction.version + 1,
-      });
+        Object.assign(transaction, {
+          tagId: dto.tagId ?? transaction.tagId,
+          title: dto.title ?? transaction.title,
+          description: dto.description ?? transaction.description,
+          amount: dto.amount ?? transaction.amount,
+          transactionType: dto.transactionType ?? transaction.transactionType,
+          transactionDate: dto.transactionDate
+            ? new Date(dto.transactionDate)
+            : transaction.transactionDate,
+          merchantName: dto.merchantName ?? transaction.merchantName,
+          version: transaction.version + 1,
+        });
 
-      const saved = await manager.save(transaction);
-      oldWallet.balance = subtractMoney(oldWallet.balance, oldEffect);
-      oldWallet.balance = addMoney(
-        oldWallet.balance,
-        transactionBalanceEffect(
-          saved.amount,
-          saved.transactionType,
-          saved.status,
-        ),
-      );
-      await manager.save(oldWallet);
-      return saved;
-    });
-    await this.checkBudgetAlert(userId, updated);
-    return updated;
+        const saved = await manager.save(transaction);
+        const newTag = dto.tagId
+          ? await this.findTag(userId, dto.tagId)
+          : tag;
+        wallet.balance = subtractMoney(wallet.balance, oldEffect);
+        wallet.balance = addMoney(
+          wallet.balance,
+          transactionBalanceEffect(
+            saved.amount,
+            saved.transactionType,
+            saved.status,
+          ),
+        );
+        await manager.save(wallet);
+        return { saved, wallet, tag: newTag };
+      },
+    );
+    await this.checkBudgetAlert(userId, saved);
+    await this.notifyTransactionChange(userId, saved, wallet, tag);
+    return saved;
   }
 
   async confirm(userId: string, id: string): Promise<Transaction> {
@@ -218,55 +241,72 @@ export class TransactionsService {
       return current;
     }
 
-    const confirmed = await this.dataSource.transaction(async (manager) => {
-      const transaction = await this.findOne(userId, id);
-      if (transaction.status === TransactionStatus.Confirmed) {
-        return transaction;
-      }
+    const { saved, wallet, tag } = await this.dataSource.transaction(
+      async (manager) => {
+        const transaction = await this.findOne(userId, id);
+        if (transaction.status === TransactionStatus.Confirmed) {
+          return {
+            saved: transaction,
+            wallet: await this.findWallet(userId, transaction.walletId),
+            tag: transaction.tagId
+              ? await this.findTag(userId, transaction.tagId)
+              : null,
+          };
+        }
 
-      const wallet = await this.findWallet(userId, transaction.walletId);
-      const oldEffect = transactionBalanceEffect(
-        transaction.amount,
-        transaction.transactionType,
-        transaction.status,
-      );
-
-      transaction.status = TransactionStatus.Confirmed;
-      transaction.version += 1;
-      const saved = await manager.save(transaction);
-
-      wallet.balance = subtractMoney(wallet.balance, oldEffect);
-      wallet.balance = addMoney(
-        wallet.balance,
-        transactionBalanceEffect(
-          saved.amount,
-          saved.transactionType,
-          saved.status,
-        ),
-      );
-      await manager.save(wallet);
-      return saved;
-    });
-    await this.checkBudgetAlert(userId, confirmed);
-    return confirmed;
-  }
-
-  async remove(userId: string, id: string): Promise<{ deleted: boolean }> {
-    return this.dataSource.transaction(async (manager) => {
-      const transaction = await this.findOne(userId, id);
-      const wallet = await this.findWallet(userId, transaction.walletId);
-      wallet.balance = subtractMoney(
-        wallet.balance,
-        transactionBalanceEffect(
+        const wallet = await this.findWallet(userId, transaction.walletId);
+        const tag = transaction.tagId
+          ? await this.findTag(userId, transaction.tagId)
+          : null;
+        const oldEffect = transactionBalanceEffect(
           transaction.amount,
           transaction.transactionType,
           transaction.status,
-        ),
-      );
-      await manager.save(wallet);
-      await manager.softDelete(Transaction, { id: transaction.id });
-      return { deleted: true };
-    });
+        );
+
+        transaction.status = TransactionStatus.Confirmed;
+        transaction.version += 1;
+        const saved = await manager.save(transaction);
+
+        wallet.balance = subtractMoney(wallet.balance, oldEffect);
+        wallet.balance = addMoney(
+          wallet.balance,
+          transactionBalanceEffect(
+            saved.amount,
+            saved.transactionType,
+            saved.status,
+          ),
+        );
+        await manager.save(wallet);
+        return { saved, wallet, tag };
+      },
+    );
+    await this.checkBudgetAlert(userId, saved);
+    await this.notifyTransactionChange(userId, saved, wallet, tag);
+    return saved;
+  }
+
+  async remove(userId: string, id: string): Promise<{ deleted: boolean }> {
+    const { wallet, transaction } = await this.dataSource.transaction(
+      async (manager) => {
+        const transaction = await this.findOne(userId, id);
+        const wallet = await this.findWallet(userId, transaction.walletId);
+        wallet.balance = subtractMoney(
+          wallet.balance,
+          transactionBalanceEffect(
+            transaction.amount,
+            transaction.transactionType,
+            transaction.status,
+          ),
+        );
+        await manager.save(wallet);
+        await manager.softDelete(Transaction, { id: transaction.id });
+        return { wallet, transaction };
+      },
+    );
+
+    await this.notifyTransactionDeleted(userId, transaction, wallet);
+    return { deleted: true };
   }
 
   private async findWallet(userId: string, walletId: string): Promise<Wallet> {
@@ -304,6 +344,111 @@ export class TransactionsService {
       select: { id: true },
     });
     return wallets.map((wallet) => wallet.id);
+  }
+
+  private async getUserCurrencyCode(userId: string): Promise<string | null> {
+    const user = await this.usersRepository.findOne({
+      where: { id: userId },
+      select: { currencyCode: true },
+    });
+    return user?.currencyCode ?? null;
+  }
+
+  private async notifyTransactionChange(
+    userId: string,
+    transaction: Transaction,
+    wallet: Wallet,
+    tag: Tag | null,
+  ): Promise<void> {
+    if (!this.notificationDispatcher) return;
+    if (transaction.status !== TransactionStatus.Confirmed) return;
+
+    const currencyCode = await this.getUserCurrencyCode(userId);
+    const tagName = tag?.name ?? null;
+    const ctx = {
+      amount: transaction.amount,
+      walletName: wallet.name,
+      tagName,
+      balanceAfter: wallet.balance,
+      currencyCode,
+    };
+
+    if (transaction.transactionType === TransactionType.Income) {
+      const tpl = NotificationTemplates.transactionIncome(ctx);
+      await this.notificationDispatcher.dispatch({
+        userId,
+        type: NotificationType.TransactionIncome,
+        title: tpl.title,
+        content: tpl.content,
+        metadata: {
+          transactionId: transaction.id,
+          walletId: wallet.id,
+          tagId: tag?.id ?? null,
+          amount: transaction.amount,
+          balanceAfter: wallet.balance,
+        },
+      });
+    } else {
+      const tpl = NotificationTemplates.transactionExpense(ctx);
+      await this.notificationDispatcher.dispatch({
+        userId,
+        type: NotificationType.TransactionExpense,
+        title: tpl.title,
+        content: tpl.content,
+        metadata: {
+          transactionId: transaction.id,
+          walletId: wallet.id,
+          tagId: tag?.id ?? null,
+          amount: transaction.amount,
+          balanceAfter: wallet.balance,
+        },
+      });
+    }
+
+    await this.notificationDispatcher.dispatch({
+      userId,
+      type: NotificationType.BalanceUpdate,
+      title: `Số dư ví ${wallet.name} hiện tại`,
+      content: `Số dư hiện tại của ví ${wallet.name}: ${wallet.balance} ${currencyCode ?? ''}`.trim(),
+      metadata: {
+        walletId: wallet.id,
+        balance: wallet.balance,
+        triggerTransactionId: transaction.id,
+      },
+    });
+  }
+
+  private async notifyTransactionDeleted(
+    userId: string,
+    transaction: Transaction,
+    wallet: Wallet,
+  ): Promise<void> {
+    if (!this.notificationDispatcher) return;
+    const currencyCode = await this.getUserCurrencyCode(userId);
+    const tpl = NotificationTemplates.transactionDeleted({
+      amount: transaction.amount,
+      walletName: wallet.name,
+      tagName: transaction.title,
+      balanceAfter: wallet.balance,
+      currencyCode,
+      transactionType:
+        transaction.transactionType === TransactionType.Income
+          ? 'Income'
+          : 'Expense',
+    });
+    await this.notificationDispatcher.dispatch({
+      userId,
+      type: NotificationType.Transaction,
+      title: tpl.title,
+      content: tpl.content,
+      metadata: {
+        transactionId: transaction.id,
+        walletId: wallet.id,
+        amount: transaction.amount,
+        balanceAfter: wallet.balance,
+        deleted: true,
+      },
+    });
   }
 
   private async checkBudgetAlert(

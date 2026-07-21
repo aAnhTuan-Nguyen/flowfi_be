@@ -1,5 +1,6 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { AppController } from './app.controller';
@@ -27,6 +28,7 @@ import { AiProcessingModule } from './ai-processing/ai-processing.module';
       isGlobal: true,
       validate: validateEnv,
     }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([
       {
         ttl: Number(process.env.RATE_LIMIT_TTL_SECONDS ?? 60) * 1000,

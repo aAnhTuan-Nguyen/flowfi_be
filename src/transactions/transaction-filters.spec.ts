@@ -22,6 +22,9 @@ describe('TransactionsService filters', () => {
       } as never,
       {} as never,
       {} as never,
+      {} as never,
+      undefined,
+      undefined,
     );
 
     await service.findAll('user_1', {
