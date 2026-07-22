@@ -43,6 +43,11 @@ export class TransactionsController {
     return this.transactionsService.update(user.id, id, dto);
   }
 
+  @Post(':id/confirm')
+  confirmWithPost(@CurrentUser() user: JwtUser, @Param('id') id: string) {
+    return this.transactionsService.confirm(user.id, id);
+  }
+
   @Patch(':id/confirm')
   confirm(@CurrentUser() user: JwtUser, @Param('id') id: string) {
     return this.transactionsService.confirm(user.id, id);
