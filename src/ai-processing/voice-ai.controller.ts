@@ -39,7 +39,6 @@ export class VoiceAiController {
       user.id,
       dto.WalletId,
       this.pickFile(files, 'Voice'),
-      dto.MockTranscribedText,
     );
   }
 

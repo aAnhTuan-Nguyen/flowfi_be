@@ -22,6 +22,7 @@ import { InitialFlowFiMvp1780000000000 } from './migrations/1780000000000-Initia
 import { AuthBudgetAlerts1780000001000 } from './migrations/1780000001000-AuthBudgetAlerts';
 import { AddAiProcessing1780000002000 } from './migrations/1780000002000-AddAiProcessing';
 import { NotificationPreferencesAndTypes1780000003000 } from './migrations/1780000003000-NotificationPreferencesAndTypes';
+import { RemoveOverallBudgetTargets1780000004000 } from './migrations/1780000004000-RemoveOverallBudgetTargets';
 
 const env = validateEnv(process.env);
 
@@ -54,5 +55,6 @@ export default new DataSource({
     AuthBudgetAlerts1780000001000,
     AddAiProcessing1780000002000,
     NotificationPreferencesAndTypes1780000003000,
+    RemoveOverallBudgetTargets1780000004000,
   ],
 });

@@ -8,6 +8,7 @@ describe('BudgetProgressService', () => {
   };
   const transactionsRepository = {
     createQueryBuilder: jest.fn(),
+    find: jest.fn(),
   };
   const alertLogsRepository = {
     findOne: jest.fn(),
@@ -100,5 +101,62 @@ describe('BudgetProgressService', () => {
 
     expect(notificationDispatcher.dispatch).toHaveBeenCalledTimes(1);
     expect(alertLogsRepository.save).toHaveBeenCalledTimes(1);
+  });
+  it('returns an aggregated monthly budget detail', async () => {
+    budgetsRepository.find.mockResolvedValue([
+      {
+        id: 'overall',
+        userId: 'user_1',
+        tagId: null,
+        budgetAmount: '8000.00',
+        month: 6,
+        year: 2026,
+      },
+      {
+        id: 'food_budget',
+        userId: 'user_1',
+        tagId: 'food',
+        tag: { name: 'Food' },
+        budgetAmount: '2500.00',
+        month: 6,
+        year: 2026,
+      },
+    ]);
+    transactionsRepository.find.mockResolvedValue([
+      {
+        tagId: 'food',
+        tag: { name: 'Food' },
+        walletId: 'cash',
+        wallet: { name: 'Cash' },
+        amount: '2200.00',
+      },
+      {
+        tagId: 'travel',
+        tag: { name: 'Travel' },
+        walletId: 'cash',
+        wallet: { name: 'Cash' },
+        amount: '800.00',
+      },
+    ]);
+    const service = new BudgetProgressService(
+      budgetsRepository as never,
+      transactionsRepository as never,
+      notificationDispatcher as never,
+      alertLogsRepository as never,
+    );
+
+    await expect(
+      service.getMonthlyDetails('user_1', 6, 2026),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        targetAmount: '2500.00',
+        spentAmount: '3000.00',
+        remainingAmount: '-500.00',
+        percentUsed: 120,
+        transactionCount: 2,
+        topCategoryName: 'Food',
+        topWalletName: 'Cash',
+      }),
+    );
   });
 });
