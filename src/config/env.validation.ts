@@ -44,6 +44,19 @@ function asString(value: unknown, fallback: string): string {
   return fallback;
 }
 
+function legacyLocalDatabaseUrl(config: Record<string, unknown>): string {
+  const user = encodeURIComponent(asString(config.POSTGRES_USER, 'postgres'));
+  const password = encodeURIComponent(
+    asString(config.POSTGRES_PASSWORD, 'postgres'),
+  );
+  const host = asString(config.POSTGRES_HOST, 'localhost');
+  const port = asNumber(config.POSTGRES_PORT as string | undefined, 6000);
+  const database = encodeURIComponent(
+    asString(config.FINANCE_DB_NAME, 'flowfi'),
+  );
+  return `postgresql://${user}:${password}@${host}:${port}/${database}`;
+}
+
 export function validateEnv(config: Record<string, unknown>): AppConfig {
   return {
     nodeEnv: asString(config.NODE_ENV, 'development'),
@@ -55,7 +68,7 @@ export function validateEnv(config: Record<string, unknown>): AppConfig {
       .filter(Boolean),
     databaseUrl: asString(
       config.DATABASE_URL,
-      'postgresql://postgres:postgres@localhost:5432/flowfi',
+      legacyLocalDatabaseUrl(config),
     ),
     databaseSsl: asBoolean(config.DATABASE_SSL as string | undefined, false),
     databaseSynchronize: asBoolean(

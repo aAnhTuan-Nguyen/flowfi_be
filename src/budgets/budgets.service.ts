@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
@@ -8,6 +8,7 @@ import { Tag } from '../tags/entities/tag.entity';
 import { Budget } from './entities/budget.entity';
 import { CreateBudgetDto } from './dto/create-budget.dto';
 import { UpdateBudgetDto } from './dto/update-budget.dto';
+import { SaveBudgetTargetDto } from './dto/save-budget-target.dto';
 
 @Injectable()
 export class BudgetsService {
@@ -19,17 +20,73 @@ export class BudgetsService {
   ) {}
 
   async create(userId: string, dto: CreateBudgetDto): Promise<Budget> {
-    if (dto.tagId) await this.findTag(userId, dto.tagId);
+    await this.findTag(userId, dto.tagId);
     return this.budgetsRepository.save(
       this.budgetsRepository.create({
         userId,
-        tagId: dto.tagId ?? null,
+        tagId: dto.tagId,
         budgetAmount: dto.budgetAmount,
         month: dto.month,
         year: dto.year,
         warningThresholdPercent: dto.warningThresholdPercent ?? 80,
       }),
     );
+  }
+
+  async saveTarget(userId: string, dto: SaveBudgetTargetDto): Promise<Budget[]> {
+    if (dto.allocations.length === 0) {
+      throw new BadRequestException({
+        code: ErrorCode.ValidationError,
+        message: 'At least one category allocation is required',
+      });
+    }
+
+    for (const allocation of dto.allocations) {
+      await this.findTag(userId, allocation.tagId);
+    }
+
+    return this.budgetsRepository.manager.transaction(async (manager) => {
+      const repository = manager.getRepository(Budget);
+      const existing = await repository.find({
+        where: { userId, month: dto.month, year: dto.year },
+      });
+      const desiredTagIds = new Set(dto.allocations.map((item) => item.tagId));
+      const obsolete = existing.filter(
+        (budget) =>
+          budget.tagId === null || !desiredTagIds.has(budget.tagId),
+      );
+      if (obsolete.length > 0) {
+        await repository.softDelete(obsolete.map((budget) => budget.id));
+      }
+
+      const saved: Budget[] = [];
+      const values = dto.allocations.map((item) => ({
+        tagId: item.tagId,
+        amount: item.amount,
+      }));
+      for (const value of values) {
+        const budget = existing.find((item) => item.tagId === value.tagId);
+        saved.push(
+          await repository.save(
+            budget
+              ? Object.assign(budget, {
+                  budgetAmount: value.amount,
+                  warningThresholdPercent: dto.warningThresholdPercent,
+                  version: budget.version + 1,
+                })
+              : repository.create({
+                  userId,
+                  tagId: value.tagId,
+                  budgetAmount: value.amount,
+                  month: dto.month,
+                  year: dto.year,
+                  warningThresholdPercent: dto.warningThresholdPercent,
+                }),
+          ),
+        );
+      }
+      return saved;
+    });
   }
 
   async findAll(userId: string, query: PaginationQueryDto) {

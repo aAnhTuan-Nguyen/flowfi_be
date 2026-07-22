@@ -228,22 +228,26 @@ export class AiProcessingService {
       requestType: AiRequestType.VoiceToText,
       inputUrl: voiceUrl,
     });
-    const transcriptText = this.mockTranscript(file!.originalname);
-    await this.saveAnalysisResult(request.id, {
-      inputType: AiInputType.Voice,
-      transactions: [],
-      warnings: [],
-      rawResponse: transcriptText,
-    });
-    await this.completeRequest(request);
-    return { transcriptText };
+    try {
+      const transcriptText = await this.transcribeAudioWithProvider(file!);
+      await this.saveAnalysisResult(request.id, {
+        inputType: AiInputType.Voice,
+        transactions: [],
+        warnings: [],
+        rawResponse: transcriptText,
+      });
+      await this.completeRequest(request);
+      return { requestId: request.id, voiceUrl, transcriptText };
+    } catch (error) {
+      await this.failRequest(request, error);
+      throw error;
+    }
   }
 
   async createTransactionFromVoice(
     userId: string,
     walletId: string,
     file: UploadedAiFile | undefined,
-    mockTranscribedText?: string,
   ) {
     this.assertUuid(walletId, 'WalletId');
     this.validateAudio(file);
@@ -255,30 +259,35 @@ export class AiProcessingService {
       requestType: AiRequestType.VoiceToTransaction,
       inputUrl: voiceUrl,
     });
-    const rawText =
-      mockTranscribedText ?? this.mockTranscript(file!.originalname);
-    const analysis = this.analyzeVoiceText(rawText);
-    const result = await this.saveAnalysisResult(request.id, analysis);
-    await this.completeRequest(request);
+    try {
+      const rawText = await this.transcribeAudioWithProvider(file!);
+      const analysis = await this.analyzeVoiceWithProvider(rawText);
+      const result = await this.saveAnalysisResult(request.id, analysis);
+      const [created] = await this.createTransactionsFromAnalysis(
+        userId,
+        walletId,
+        analysis.transactions.slice(0, 1),
+        TransactionInputMethod.Voice,
+        TransactionStatus.Draft,
+      );
+      await this.completeRequest(request);
 
-    const [created] = await this.createTransactionsFromAnalysis(
-      userId,
-      walletId,
-      analysis.transactions.slice(0, 1),
-      TransactionInputMethod.Voice,
-    );
-
-    return {
-      aiRequestId: request.id,
-      aiResultId: result.id,
-      voiceUrl,
-      rawText,
-      parsedData: analysis.transactions[0] ?? null,
-      analysis,
-      tag: created?.tag ?? null,
-      tagCreated: created?.tagCreated ?? false,
-      transaction: created?.transaction ?? null,
-    };
+      return {
+        aiRequestId: request.id,
+        aiResultId: result.id,
+        voiceUrl,
+        rawText,
+        parsedData: analysis.transactions[0] ?? null,
+        analysis,
+        tag: created?.tag ?? null,
+        tagCreated: created?.tagCreated ?? false,
+        transaction: created?.transaction ?? null,
+        requiresConfirmation: true,
+      };
+    } catch (error) {
+      await this.failRequest(request, error);
+      throw error;
+    }
   }
 
   private async createManagedRequest(input: {
@@ -580,15 +589,174 @@ export class AiProcessingService {
     }
   }
 
-  private analyzeVoiceText(rawText: string) {
-    return {
-      inputType: AiInputType.Voice,
-      transactions: this.parseTransactions(rawText, true),
-      warnings: this.parseTransactions(rawText, true).length
-        ? []
-        : ['No financial transaction found'],
-      rawResponse: JSON.stringify({ rawText }),
-    };
+  private async transcribeAudioWithProvider(
+    file: UploadedAiFile,
+  ): Promise<string> {
+    if (!file.buffer || file.buffer.length === 0) {
+      throw new BadRequestException('Voice buffer is missing');
+    }
+    const apiKey = this.envValue(
+      'AI_PROVIDER_API_KEY',
+      'FLOWFI_AI__AiProvider__ApiKey',
+    );
+    if (!apiKey) {
+      throw new BadRequestException('AI provider API key is not configured');
+    }
+    const baseUrl =
+      this.envValue('AI_PROVIDER_BASE_URL', 'FLOWFI_AI__AiProvider__BaseUrl') ??
+      'https://getnexai.net/api/v1';
+    const path =
+      this.envValue('AI_PROVIDER_TRANSCRIPTIONS_PATH') ??
+      '/audio/transcriptions';
+    const model =
+      this.envValue('AI_PROVIDER_TRANSCRIPTION_MODEL') ?? 'whisper-1';
+    const timeoutSeconds = Number(
+      this.envValue(
+        'AI_PROVIDER_TIMEOUT_SECONDS',
+        'FLOWFI_AI__AiProvider__TimeoutSeconds',
+      ) ?? 60,
+    );
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([Uint8Array.from(file.buffer)], { type: file.mimetype }),
+      file.originalname,
+    );
+    form.append('model', model);
+    form.append('language', 'vi');
+    form.append('response_format', 'json');
+
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      Math.max(timeoutSeconds, 1) * 1000,
+    );
+    try {
+      const response = await fetch(
+        `${baseUrl.replace(/\/$/, '')}${path.startsWith('/') ? path : `/${path}`}`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${apiKey}` },
+          body: form,
+          signal: controller.signal,
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        throw new UnprocessableEntityException({
+          code: 'AI_TRANSCRIPTION_FAILED',
+          message: `Speech-to-text provider returned ${response.status}`,
+        });
+      }
+      const text =
+        typeof payload === 'object' && payload !== null
+          ? (payload as Record<string, unknown>).text
+          : null;
+      if (typeof text !== 'string' || !text.trim()) {
+        throw new UnprocessableEntityException({
+          code: 'AI_EMPTY_TRANSCRIPTION',
+          message: 'Speech-to-text provider returned an empty transcript',
+        });
+      }
+      return text.trim();
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  private async analyzeVoiceWithProvider(rawText: string) {
+    const apiKey = this.envValue(
+      'AI_PROVIDER_API_KEY',
+      'FLOWFI_AI__AiProvider__ApiKey',
+    );
+    if (!apiKey) {
+      throw new BadRequestException('AI provider API key is not configured');
+    }
+    const baseUrl =
+      this.envValue('AI_PROVIDER_BASE_URL', 'FLOWFI_AI__AiProvider__BaseUrl') ??
+      'https://getnexai.net/api/v1';
+    const responsesPath =
+      this.envValue(
+        'AI_PROVIDER_RESPONSES_PATH',
+        'FLOWFI_AI__AiProvider__ResponsesPath',
+      ) ?? '/responses';
+    const model =
+      this.envValue('AI_PROVIDER_MODEL', 'FLOWFI_AI__AiProvider__Model') ??
+      'gpt-5.5';
+    const timeoutSeconds = Number(
+      this.envValue(
+        'AI_PROVIDER_TIMEOUT_SECONDS',
+        'FLOWFI_AI__AiProvider__TimeoutSeconds',
+      ) ?? 30,
+    );
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      Math.max(timeoutSeconds, 1) * 1000,
+    );
+    try {
+      const response = await fetch(
+        `${baseUrl.replace(/\/$/, '')}${responsesPath}`,
+        {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            input: [
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'input_text',
+                    text: `${this.voiceTransactionPrompt()}\n\nTranscript:\n${rawText}`,
+                  },
+                ],
+              },
+            ],
+            reasoning: { effort: 'low' },
+            text: { verbosity: 'low' },
+          }),
+          signal: controller.signal,
+        },
+      );
+      const payload = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        throw new UnprocessableEntityException({
+          code: 'AI_PROVIDER_REQUEST_FAILED',
+          message: `AI provider returned ${response.status}`,
+        });
+      }
+      const providerText = this.extractProviderText(payload);
+      const parsed = this.parseJsonObject(providerText);
+      const normalized = Array.isArray(parsed.transactions)
+        ? parsed.transactions
+            .map((item) =>
+              typeof item === 'object' && item !== null
+                ? this.normalizeTransaction(item as Record<string, unknown>)
+                : null,
+            )
+            .filter((item): item is ParsedTransaction => item !== null)
+        : [];
+      if (normalized.length === 0) {
+        throw new UnprocessableEntityException({
+          code: 'AI_NO_FINANCIAL_TRANSACTION_FOUND',
+          message: 'No financial transaction found in the transcript',
+        });
+      }
+      return {
+        inputType: AiInputType.Voice,
+        transactions: normalized,
+        warnings: Array.isArray(parsed.warnings)
+          ? parsed.warnings.map(String)
+          : [],
+        rawResponse: providerText,
+      };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private parseTransactions(
@@ -771,6 +939,38 @@ Return this JSON shape:
 }`.trim();
   }
 
+  private voiceTransactionPrompt() {
+    return `
+You convert a Vietnamese voice transcript into a proposed FlowFi transaction.
+Return only valid JSON and do not explain.
+
+Rules:
+- Extract at most one clear financial transaction.
+- Never invent an amount, date, merchant, or transaction type.
+- Vietnamese amounts such as "năm mươi nghìn", "50 nghìn", and "50.000 đồng" must be normalized to VND numbers.
+- Use EXPENSE or INCOME. Return no transaction for transfers, ambiguous speech, or missing amounts.
+- Use a concise Vietnamese title and a Vietnamese tagName.
+- Keep the original transcript in rawText.
+
+Return this JSON shape:
+{
+  "transactions": [
+    {
+      "title": "",
+      "amount": 0,
+      "type": "EXPENSE | INCOME | UNKNOWN",
+      "tagName": "",
+      "note": "",
+      "transactionDate": null,
+      "merchantName": null,
+      "rawText": "",
+      "confidence": 0.0
+    }
+  ],
+  "warnings": []
+}`.trim();
+  }
+
   private toImageType(value: unknown): AiImageType {
     if (Object.values(AiImageType).includes(value as AiImageType)) {
       return value as AiImageType;
@@ -894,10 +1094,6 @@ Return this JSON shape:
       text,
     );
     return match ? match[1] : null;
-  }
-
-  private mockTranscript(fileName: string) {
-    return `Mock transcription for ${fileName}`;
   }
 
   private fileExtension(fileName: string) {

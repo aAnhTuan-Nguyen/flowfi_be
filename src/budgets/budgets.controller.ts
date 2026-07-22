@@ -6,6 +6,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -16,6 +17,8 @@ import { BudgetsService } from './budgets.service';
 import { BudgetProgressQueryDto } from './dto/budget-progress-query.dto';
 import { CreateBudgetDto } from './dto/create-budget.dto';
 import { UpdateBudgetDto } from './dto/update-budget.dto';
+import { SaveBudgetTargetDto } from './dto/save-budget-target.dto';
+import { BudgetAnnualSummaryQueryDto } from './dto/budget-annual-summary-query.dto';
 
 @Controller('budgets')
 export class BudgetsController {
@@ -27,6 +30,11 @@ export class BudgetsController {
   @Post()
   create(@CurrentUser() user: JwtUser, @Body() dto: CreateBudgetDto) {
     return this.budgetsService.create(user.id, dto);
+  }
+
+  @Put('target')
+  saveTarget(@CurrentUser() user: JwtUser, @Body() dto: SaveBudgetTargetDto) {
+    return this.budgetsService.saveTarget(user.id, dto);
   }
 
   @Get()
@@ -44,6 +52,26 @@ export class BudgetsController {
       query.month,
       query.year,
     );
+  }
+
+  @Get('monthly-details')
+  monthlyDetails(
+    @CurrentUser() user: JwtUser,
+    @Query() query: BudgetProgressQueryDto,
+  ) {
+    return this.budgetProgressService.getMonthlyDetails(
+      user.id,
+      query.month,
+      query.year,
+    );
+  }
+
+  @Get('annual-summary')
+  annualSummary(
+    @CurrentUser() user: JwtUser,
+    @Query() query: BudgetAnnualSummaryQueryDto,
+  ) {
+    return this.budgetProgressService.getAnnualSummary(user.id, query.year);
   }
 
   @Get(':id/progress')
