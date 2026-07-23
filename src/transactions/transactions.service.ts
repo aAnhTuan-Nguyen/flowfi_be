@@ -12,9 +12,7 @@ import { ErrorCode } from '../common/errors/error-code.enum';
 import { addMoney, subtractMoney } from '../common/utils/money';
 import { paginated } from '../common/utils/pagination';
 import { BudgetProgressService } from '../budgets/budget-progress.service';
-import {
-  NotificationDispatcher,
-} from '../notifications/notification.dispatcher';
+import { NotificationDispatcher } from '../notifications/notification.dispatcher';
 import { NotificationTemplates } from '../notifications/notification.templates';
 import { NotificationType } from '../notifications/notification.enums';
 import { Tag } from '../tags/entities/tag.entity';
@@ -116,7 +114,9 @@ export class TransactionsService {
       .innerJoin('transaction.wallet', 'wallet')
       .leftJoinAndSelect('transaction.tag', 'tag')
       .where('wallet.user_id = :userId', { userId })
-      .orderBy('transaction.transaction_date', 'DESC')
+      .orderBy('transaction.updated_at', 'DESC', 'NULLS LAST')
+      .addOrderBy('transaction.transaction_date', 'DESC', 'NULLS LAST')
+      .addOrderBy('transaction.id', 'DESC')
       .skip((query.page - 1) * query.limit)
       .take(query.limit);
 
@@ -214,9 +214,7 @@ export class TransactionsService {
         });
 
         const saved = await manager.save(transaction);
-        const newTag = dto.tagId
-          ? await this.findTag(userId, dto.tagId)
-          : tag;
+        const newTag = dto.tagId ? await this.findTag(userId, dto.tagId) : tag;
         wallet.balance = subtractMoney(wallet.balance, oldEffect);
         wallet.balance = addMoney(
           wallet.balance,
@@ -409,7 +407,8 @@ export class TransactionsService {
       userId,
       type: NotificationType.BalanceUpdate,
       title: `Số dư ví ${wallet.name} hiện tại`,
-      content: `Số dư hiện tại của ví ${wallet.name}: ${wallet.balance} ${currencyCode ?? ''}`.trim(),
+      content:
+        `Số dư hiện tại của ví ${wallet.name}: ${wallet.balance} ${currencyCode ?? ''}`.trim(),
       metadata: {
         walletId: wallet.id,
         balance: wallet.balance,

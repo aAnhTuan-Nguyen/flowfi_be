@@ -9,6 +9,7 @@ describe('TransactionsService filters', () => {
       where: jest.fn().mockReturnThis(),
       andWhere: jest.fn().mockReturnThis(),
       orderBy: jest.fn().mockReturnThis(),
+      addOrderBy: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       take: jest.fn().mockReturnThis(),
       getManyAndCount: jest.fn().mockResolvedValue([[], 0]),
@@ -46,6 +47,22 @@ describe('TransactionsService filters', () => {
     expect(queryBuilder.andWhere).toHaveBeenCalledWith(
       'transaction.input_method = :inputMethod',
       { inputMethod: TransactionInputMethod.Manual },
+    );
+    expect(queryBuilder.orderBy).toHaveBeenCalledWith(
+      'transaction.updated_at',
+      'DESC',
+      'NULLS LAST',
+    );
+    expect(queryBuilder.addOrderBy).toHaveBeenNthCalledWith(
+      1,
+      'transaction.transaction_date',
+      'DESC',
+      'NULLS LAST',
+    );
+    expect(queryBuilder.addOrderBy).toHaveBeenNthCalledWith(
+      2,
+      'transaction.id',
+      'DESC',
     );
   });
 });
