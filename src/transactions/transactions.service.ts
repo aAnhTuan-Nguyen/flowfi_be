@@ -402,19 +402,6 @@ export class TransactionsService {
         },
       });
     }
-
-    await this.notificationDispatcher.dispatch({
-      userId,
-      type: NotificationType.BalanceUpdate,
-      title: `Số dư ví ${wallet.name} hiện tại`,
-      content:
-        `Số dư hiện tại của ví ${wallet.name}: ${wallet.balance} ${currencyCode ?? ''}`.trim(),
-      metadata: {
-        walletId: wallet.id,
-        balance: wallet.balance,
-        triggerTransactionId: transaction.id,
-      },
-    });
   }
 
   private async notifyTransactionDeleted(
