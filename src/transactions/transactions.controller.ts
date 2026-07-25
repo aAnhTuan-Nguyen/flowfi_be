@@ -12,6 +12,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { JwtUser } from '../common/interfaces/request-with-user.interface';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { TransactionQueryDto } from './dto/transaction-query.dto';
+import { TransactionSummaryQueryDto } from './dto/transaction-summary-query.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { TransactionsService } from './transactions.service';
 
@@ -27,6 +28,14 @@ export class TransactionsController {
   @Get()
   findAll(@CurrentUser() user: JwtUser, @Query() query: TransactionQueryDto) {
     return this.transactionsService.findAll(user.id, query);
+  }
+
+  @Get('summary')
+  getSummary(
+    @CurrentUser() user: JwtUser,
+    @Query() query: TransactionSummaryQueryDto,
+  ) {
+    return this.transactionsService.getSummary(user.id, query);
   }
 
   @Get(':id')

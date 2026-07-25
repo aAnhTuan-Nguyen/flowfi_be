@@ -20,6 +20,7 @@ import { Wallet } from '../wallets/entities/wallet.entity';
 import { User } from '../users/entities/user.entity';
 import { CreateTransactionDto } from './dto/create-transaction.dto';
 import { TransactionQueryDto } from './dto/transaction-query.dto';
+import { TransactionSummaryQueryDto } from './dto/transaction-summary-query.dto';
 import { UpdateTransactionDto } from './dto/update-transaction.dto';
 import { Transaction } from './entities/transaction.entity';
 import { transactionBalanceEffect } from './transaction-balance';
@@ -161,6 +162,47 @@ export class TransactionsService {
 
     const [items, total] = await queryBuilder.getManyAndCount();
     return paginated(items, query.page, query.limit, total);
+  }
+
+  async getSummary(userId: string, query: TransactionSummaryQueryDto) {
+    const totals = await this.transactionsRepository
+      .createQueryBuilder('transaction')
+      .innerJoin('transaction.wallet', 'wallet')
+      .select(
+        `COALESCE(SUM(CASE
+          WHEN transaction.transaction_type = :income
+          THEN transaction.amount
+          ELSE 0
+        END), 0)`,
+        'totalIncome',
+      )
+      .addSelect(
+        `COALESCE(SUM(CASE
+          WHEN transaction.transaction_type = :expense
+          THEN transaction.amount
+          ELSE 0
+        END), 0)`,
+        'totalExpense',
+      )
+      .where('wallet.user_id = :userId', { userId })
+      .andWhere('transaction.status = :status', {
+        status: TransactionStatus.Confirmed,
+      })
+      .andWhere('transaction.transaction_date >= :from', { from: query.from })
+      .andWhere('transaction.transaction_date <= :to', { to: query.to })
+      .setParameters({
+        income: TransactionType.Income,
+        expense: TransactionType.Expense,
+      })
+      .getRawOne<{
+        totalIncome: string | number;
+        totalExpense: string | number;
+      }>();
+
+    return {
+      totalIncome: String(totals?.totalIncome ?? '0'),
+      totalExpense: String(totals?.totalExpense ?? '0'),
+    };
   }
 
   async findOne(userId: string, id: string): Promise<Transaction> {
