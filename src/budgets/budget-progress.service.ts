@@ -17,6 +17,9 @@ import { Budget } from './entities/budget.entity';
 
 export type BudgetProgressStatus = 'Safe' | 'Warning' | 'Exceeded';
 
+const OTHER_CATEGORY_ID = '__other__';
+const OTHER_CATEGORY_NAME = 'Khác';
+
 export interface BudgetProgress {
   budgetId: string;
   tagId: string | null;
@@ -37,6 +40,13 @@ export interface MonthlyBudgetCategoryDetail {
   spentAmount: string;
   percentOfSpend: number;
   variancePercent: number;
+  unbudgetedCategories: MonthlyBudgetUnbudgetedCategoryDetail[];
+}
+
+export interface MonthlyBudgetUnbudgetedCategoryDetail {
+  tagId: string;
+  tagName: string;
+  spentAmount: string;
 }
 
 export interface MonthlyBudgetDetails {
@@ -155,14 +165,36 @@ export class BudgetProgressService {
       });
     }
     const walletSpend = new Map<string, { name: string; spent: string }>();
+    const unbudgetedCategorySpend = new Map<
+      string,
+      { name: string; spent: string }
+    >();
     for (const transaction of transactions) {
-      const category = categoryMap.get(transaction.tagId) ?? {
-        name: transaction.tag?.name ?? 'Other',
-        target: '0.00',
-        spent: '0.00',
-      };
+      const configuredCategory = categoryMap.get(transaction.tagId);
+      const categoryId = configuredCategory
+        ? transaction.tagId
+        : OTHER_CATEGORY_ID;
+      const category = configuredCategory ??
+        categoryMap.get(OTHER_CATEGORY_ID) ?? {
+          name: OTHER_CATEGORY_NAME,
+          target: '0.00',
+          spent: '0.00',
+        };
       category.spent = addMoney(category.spent, transaction.amount);
-      categoryMap.set(transaction.tagId, category);
+      categoryMap.set(categoryId, category);
+      if (!configuredCategory) {
+        const unbudgetedCategory = unbudgetedCategorySpend.get(
+          transaction.tagId,
+        ) ?? {
+          name: transaction.tag?.name ?? OTHER_CATEGORY_NAME,
+          spent: '0.00',
+        };
+        unbudgetedCategory.spent = addMoney(
+          unbudgetedCategory.spent,
+          transaction.amount,
+        );
+        unbudgetedCategorySpend.set(transaction.tagId, unbudgetedCategory);
+      }
 
       const wallet = walletSpend.get(transaction.walletId) ?? {
         name: transaction.wallet?.name ?? 'Wallet',
@@ -183,12 +215,29 @@ export class BudgetProgressService {
           Number(value.target) <= 0
             ? 0
             : Number(
-                (((Number(value.spent) - Number(value.target)) /
-                  Number(value.target)) *
-                  100).toFixed(2),
+                (
+                  ((Number(value.spent) - Number(value.target)) /
+                    Number(value.target)) *
+                  100
+                ).toFixed(2),
               ),
+        unbudgetedCategories:
+          tagId === OTHER_CATEGORY_ID
+            ? [...unbudgetedCategorySpend.entries()]
+                .map(([unbudgetedTagId, category]) => ({
+                  tagId: unbudgetedTagId,
+                  tagName: category.name,
+                  spentAmount: category.spent,
+                }))
+                .sort(
+                  (left, right) =>
+                    Number(right.spentAmount) - Number(left.spentAmount),
+                )
+            : [],
       }))
-      .sort((left, right) => Number(right.spentAmount) - Number(left.spentAmount));
+      .sort(
+        (left, right) => Number(right.spentAmount) - Number(left.spentAmount),
+      );
     const topWallet = [...walletSpend.values()].sort(
       (left, right) => Number(right.spent) - Number(left.spent),
     )[0];
